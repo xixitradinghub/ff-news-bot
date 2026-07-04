@@ -89,7 +89,8 @@ def run(test_mode=False):
         print("錯誤:找不到環境變數 DISCORD_WEBHOOK_URL,請先設定。", file=sys.stderr)
         sys.exit(1)
 
-    events = build_sample_events() if test_mode else fetch_calendar()
+    use_test_data = test_mode or os.environ.get("USE_TEST_DATA", "false").lower() == "true"
+    events = build_sample_events() if use_test_data else fetch_calendar()
 
     today_local_date = datetime.now(LOCAL_TZ).date()
 
