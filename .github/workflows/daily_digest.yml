@@ -3,8 +3,14 @@ name: FF Daily Digest
 on:
   schedule:
     # UTC 00:00 = GMT+8 早上 08:00
+    # 想改時間:改這裡的 UTC 時間就好(GMT+8 時間 - 8 小時 = UTC 時間)
     - cron: "0 0 * * *"
-  workflow_dispatch: {}  # 允許在 GitHub 網頁上手動點擊執行,方便測試
+  workflow_dispatch:
+    inputs:
+      use_test_data:
+        description: "使用假資料測試(不會真的抓 ForexFactory,只用來看訊息長怎樣)"
+        type: boolean
+        default: false
 
 jobs:
   send-digest:
@@ -24,4 +30,5 @@ jobs:
       - name: Run daily digest
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          USE_TEST_DATA: ${{ inputs.use_test_data }}
         run: python daily_digest.py
