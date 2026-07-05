@@ -2,9 +2,9 @@ name: FF Daily Digest
 
 on:
   schedule:
-    # UTC 00:00 = GMT+8 早上 08:00
+    # UTC 01:00 = GMT+8 早上 09:00
     # 想改時間:改這裡的 UTC 時間就好(GMT+8 時間 - 8 小時 = UTC 時間)
-    - cron: "0 0 * * *"
+    - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
       use_test_data:
