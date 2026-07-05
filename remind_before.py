@@ -88,8 +88,8 @@ def send_reminder(triggered_events):
         forecast = event.get("forecast") or "N/A"
         previous = event.get("previous") or "N/A"
         lines.append(
-            f"**{event['title']}**\n"
-            f"時間: {t} (GMT+8)  |  約 {minutes_until} 分鐘後\n"
+            f"**{event['country']} | {event['title']}**\n"
+            f"時間: {t} (GMT+8)\n"
             f"Forecast: {forecast}  |  Previous: {previous}"
         )
 
