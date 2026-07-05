@@ -1,8 +1,8 @@
 name: FF 30-Min Reminder
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"   # 每 5 分鐘檢查一次
+  # 排程改由 cron-job.org 外部觸發(GitHub 原生 schedule 對高頻排程常有延遲問題)
+  # 保留 workflow_dispatch,這樣 cron-job.org 才能透過 API 觸發這個 workflow
   workflow_dispatch:
     inputs:
       use_test_data:
