@@ -1,10 +1,7 @@
 name: FF Daily Digest
 
 on:
-  schedule:
-    # UTC 01:00 = GMT+8 早上 09:00
-    # 想改時間:改這裡的 UTC 時間就好(GMT+8 時間 - 8 小時 = UTC 時間)
-    - cron: "0 1 * * *"
+  # 排程改由 cron-job.org 外部觸發(GitHub 原生 schedule 對排程常有延遲問題)
   workflow_dispatch:
     inputs:
       use_test_data:
