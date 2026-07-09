@@ -5,10 +5,14 @@ on:
   # 保留 workflow_dispatch,這樣 cron-job.org 才能透過 API 觸發這個 workflow
   workflow_dispatch:
     inputs:
-      use_test_data:
-        description: "使用假資料測試(不會真的抓 ForexFactory,只用來看訊息長怎樣)"
-        type: boolean
-        default: false
+      test_scenario:
+        description: "測試情境(正式排程觸發時會自動忽略這個欄位,一律照真實資料發送)"
+        type: choice
+        options:
+          - "off(正式發送真實資料)"
+          - "一般情境(假資料)"
+          - "Speech情境(假資料)"
+        default: "off(正式發送真實資料)"
 
 permissions:
   contents: write   # 需要寫入權限,才能把 sent_reminders.json commit 回 repo
@@ -28,11 +32,23 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run reminder check
+      - name: Run reminder check (live)
+        if: ${{ inputs.test_scenario == 'off(正式發送真實資料)' || inputs.test_scenario == '' }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          USE_TEST_DATA: ${{ inputs.use_test_data }}
         run: python remind_before.py
+
+      - name: Run reminder check (test - general)
+        if: ${{ inputs.test_scenario == '一般情境(假資料)' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python remind_before.py --send-test
+
+      - name: Run reminder check (test - speech)
+        if: ${{ inputs.test_scenario == 'Speech情境(假資料)' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python remind_before.py --send-test-speech
 
       - name: Commit updated reminder state (if changed)
         run: |
