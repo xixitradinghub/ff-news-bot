@@ -81,32 +81,53 @@ def event_key(event):
     return f"{event['country']}|{event['title']}|{event['date']}"
 
 
-def send_reminder(triggered_events):
+def build_message(triggered_events):
     lines = []
     for event, minutes_until in triggered_events:
         t = date_parser.parse(event["date"]).astimezone(LOCAL_TZ).strftime("%H:%M")
         forecast = event.get("forecast") or "N/A"
         previous = event.get("previous") or "N/A"
-        lines.append(
-            f"**{event['country']} | {event['title']}**\n"
-            f"時間: {t} (GMT+8)\n"
-            f"Forecast: {forecast}  |  Previous: {previous}"
-        )
+        lines.append(f"{t} - {event['title']}\nForecast: {forecast} | Previous: {previous}")
 
     embed = {
-        "title": "🟠 30 分鐘後有重要新聞!",
+        "title": "🟠 30 分鐘後有 USD 高影響新聞",
         "description": "\n\n".join(lines),
         "color": 0xFF8C00,  # 橘色
     }
+    return {
+        "content": "@everyone",
+        "allowed_mentions": {"parse": ["everyone"]},
+        "embeds": [embed],
+    }
 
-    resp = requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+
+def send_reminder(triggered_events):
+    payload = build_message(triggered_events)
+    resp = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
     resp.raise_for_status()
 
 
-def run(test_mode=False):
-    use_test_data = test_mode or os.environ.get("USE_TEST_DATA", "false").lower() == "true"
+def print_preview(triggered_events):
+    """終端機印出這則訊息實際會長怎樣,方便手動測試檢查格式"""
+    payload = build_message(triggered_events)
+    embed = payload["embeds"][0]
+    print("========== Discord 訊息預覽 ==========")
+    print(payload["content"])
+    print(f"[{embed['title']}]")
+    print(embed["description"])
+    print("=======================================")
 
-    if not test_mode and not DISCORD_WEBHOOK_URL:
+
+def run(mode="live"):
+    """
+    mode:
+      "live"    -> 正式發送到 Discord(真實資料)
+      "test"    -> 假資料 + 只在終端機印出預覽,不發送,不記錄 dedupe
+      "preview" -> 真實資料 + 只在終端機印出預覽,不發送,不記錄 dedupe
+    """
+    use_test_data = mode == "test" or os.environ.get("USE_TEST_DATA", "false").lower() == "true"
+
+    if mode == "live" and not DISCORD_WEBHOOK_URL:
         print("錯誤:找不到環境變數 DISCORD_WEBHOOK_URL,請先設定。", file=sys.stderr)
         sys.exit(1)
 
@@ -132,23 +153,31 @@ def run(test_mode=False):
 
         if (LEAD_MINUTES - WINDOW_MINUTES) <= minutes_until <= (LEAD_MINUTES + WINDOW_MINUTES):
             key = event_key(event)
-            if key in sent_state:
-                continue  # 已經提醒過了
+            if mode == "live" and key in sent_state:
+                continue  # 已經提醒過了(預覽/測試模式不受 dedupe 限制,方便隨時查看格式)
             triggered.append((event, round(minutes_until)))
-            sent_state[key] = time.time()
+            if mode == "live":
+                sent_state[key] = time.time()
+
+    if mode in ("test", "preview"):
+        if triggered:
+            print_preview(triggered)
+        else:
+            print("目前沒有落在 30 分鐘提醒視窗內的事件(用 --test 可以看假資料格式預覽)。")
+        return
 
     if triggered:
-        if test_mode:
-            print(f"[TEST] 會發送提醒,共 {len(triggered)} 則:")
-            for e, m in triggered:
-                print(f"  - {e['title']} ({m} 分鐘後)")
-        else:
-            send_reminder(triggered)
-            print(f"已發送提醒,共 {len(triggered)} 則事件。")
+        send_reminder(triggered)
+        print(f"已發送提醒,共 {len(triggered)} 則事件。")
         save_sent_state(sent_state)
     else:
         print(f"[{datetime.now(LOCAL_TZ).strftime('%Y-%m-%d %H:%M:%S')}] 沒有符合條件的事件需要提醒。")
 
 
 if __name__ == "__main__":
-    run(test_mode="--test" in sys.argv)
+    if "--test" in sys.argv:
+        run(mode="test")
+    elif "--preview" in sys.argv:
+        run(mode="preview")
+    else:
+        run(mode="live")
