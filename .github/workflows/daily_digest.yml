@@ -4,10 +4,15 @@ on:
   # 排程改由 cron-job.org 外部觸發(GitHub 原生 schedule 對排程常有延遲問題)
   workflow_dispatch:
     inputs:
-      use_test_data:
-        description: "使用假資料測試(不會真的抓 ForexFactory,只用來看訊息長怎樣)"
-        type: boolean
-        default: false
+      test_scenario:
+        description: "測試情境(正式排程觸發時會自動忽略這個欄位,一律照真實資料發送)"
+        type: choice
+        options:
+          - "off(正式發送真實資料)"
+          - "早上情境(假資料)"
+          - "晚上情境(假資料)"
+          - "無新聞情境(假資料)"
+        default: "off(正式發送真實資料)"
 
 jobs:
   send-digest:
@@ -24,8 +29,26 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run daily digest
+      - name: Run daily digest (live)
+        if: ${{ inputs.test_scenario == 'off(正式發送真實資料)' || inputs.test_scenario == '' }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          USE_TEST_DATA: ${{ inputs.use_test_data }}
         run: python daily_digest.py
+
+      - name: Run daily digest (test - morning)
+        if: ${{ inputs.test_scenario == '早上情境(假資料)' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python daily_digest.py --send-test-morning
+
+      - name: Run daily digest (test - evening)
+        if: ${{ inputs.test_scenario == '晚上情境(假資料)' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python daily_digest.py --send-test-evening
+
+      - name: Run daily digest (test - empty)
+        if: ${{ inputs.test_scenario == '無新聞情境(假資料)' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python daily_digest.py --send-test-empty
