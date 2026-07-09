@@ -1,15 +1,15 @@
 """
-Forex Factory (Fair Economy feed) -> Discord Webhook 每日摘要
-每天執行一次,列出「當天」所有 USD + High Impact(紅色)新聞
+Forex Factory (Fair Economy feed) -> Discord Webhook 12小時摘要
+一天執行兩次(早上8點、晚上8點),各自列出「接下來 12 小時內」的 USD + High Impact(紅色)新聞
 
 用法:
-    python daily_digest.py          -> 抓真實資料並發送到 Discord
-    python daily_digest.py --test   -> 用假資料測試,不會真的打 Discord
+    python daily_digest.py          -> 抓真實資料並發送到 Discord(正式使用)
+    python daily_digest.py --test   -> 用假資料,在終端機印出訊息長相,不會真的打 Discord
+    python daily_digest.py --preview -> 抓真實資料,在終端機印出訊息長相,不會真的打 Discord
 """
 
 import os
 import sys
-import json
 from datetime import datetime, timezone, timedelta
 
 import requests
@@ -22,10 +22,17 @@ FF_JSON_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 TARGET_COUNTRY = "USD"
 TARGET_IMPACT = "High"
 
-# 顯示 & 判斷「今天」用的時區(GMT+8)
+WINDOW_HOURS = 12  # 每次看「接下來幾小時」內的新聞
+
 LOCAL_TZ = timezone(timedelta(hours=8))
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
+
+WEEKDAY_CN = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+
+
+def weekday_cn(dt):
+    return WEEKDAY_CN[dt.weekday()]
 
 
 # ---------- 核心邏輯 ----------
@@ -41,82 +48,113 @@ def fetch_calendar():
 
 
 def build_sample_events():
-    """測試用假資料:今天早上、下午各一則 USD High,另外混一則會被過濾掉的"""
-    today_local = datetime.now(LOCAL_TZ)
-    morning = today_local.replace(hour=20, minute=30, second=0, microsecond=0)
-    afternoon = today_local.replace(hour=22, minute=0, second=0, microsecond=0)
+    """測試用假資料:一則等下的新聞、一則跨天凌晨的新聞,方便預覽格式"""
+    now_local = datetime.now(LOCAL_TZ)
+    soon = now_local + timedelta(hours=2)
+    later_crossing = now_local + timedelta(hours=8)
     return [
-        {"title": "CPI m/m", "country": "USD", "impact": "High",
-         "date": morning.isoformat(), "forecast": "0.3%", "previous": "0.2%"},
+        {"title": "ISM Services PMI", "country": "USD", "impact": "High",
+         "date": soon.isoformat(), "forecast": "N/A", "previous": "N/A"},
         {"title": "FOMC Statement", "country": "USD", "impact": "High",
-         "date": afternoon.isoformat(), "forecast": "", "previous": ""},
-        {"title": "German Factory Orders", "country": "EUR", "impact": "High",
-         "date": morning.isoformat(), "forecast": "", "previous": ""},
-        {"title": "Unemployment Claims", "country": "USD", "impact": "Low",
-         "date": morning.isoformat(), "forecast": "", "previous": ""},
+         "date": later_crossing.isoformat(), "forecast": "N/A", "previous": "N/A"},
     ]
 
 
-def send_digest(events_today):
-    today_str = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d (%A)")
-
-    if not events_today:
-        description = "今天沒有 USD 紅色(High Impact)新聞。"
-        color = 0x2ECC71  # 綠色
+def build_message(events, now_local):
+    """組出 Discord 訊息的 content + embed,回傳 payload(共用給正式發送跟預覽用)"""
+    if not events:
+        date_str = now_local.strftime("%Y-%m-%d")
+        description = f"{date_str}｜{weekday_cn(now_local)}\n計劃你的交易,交易你的計劃。✌️"
+        title = "🟢 今日無 USD 高影響新聞"
+        color = 0x00CED1  # 青色
     else:
         lines = []
-        for e in events_today:
-            t = date_parser.parse(e["date"]).astimezone(LOCAL_TZ).strftime("%H:%M")
+        current_date = None
+        for e in events:
+            et = date_parser.parse(e["date"]).astimezone(LOCAL_TZ)
+            if et.date() != current_date:
+                current_date = et.date()
+                if lines:
+                    lines.append("")  # 換日期前空一行
+                lines.append(f"{et.strftime('%Y-%m-%d')}｜{weekday_cn(et)}")
             forecast = e.get("forecast") or "N/A"
             previous = e.get("previous") or "N/A"
-            lines.append(f"**{t}** — {e['title']}\nForecast: {forecast}  |  Previous: {previous}")
-        description = "\n\n".join(lines)
+            lines.append(f"{et.strftime('%H:%M')} — {e['title']}\nForecast: {forecast} | Previous: {previous}")
+        description = "\n".join(lines)
+        title = "🔴 USD 高影響新聞"
         color = 0xFF0000  # 紅色
 
-    embed = {
-        "title": f"🔴 今日 USD 高影響力新聞 — {today_str}",
-        "description": description,
-        "color": color,
+    embed = {"title": title, "description": description, "color": color}
+    payload = {
+        "content": "@everyone",
+        "allowed_mentions": {"parse": ["everyone"]},
+        "embeds": [embed],
     }
+    return payload
 
-    payload = {"embeds": [embed]}
+
+def send_digest(events, now_local):
+    payload = build_message(events, now_local)
     resp = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
     resp.raise_for_status()
 
 
-def run(test_mode=False):
-    if not test_mode and not DISCORD_WEBHOOK_URL:
+def print_preview(events, now_local):
+    """終端機印出這則訊息實際會長怎樣,方便手動測試檢查格式"""
+    payload = build_message(events, now_local)
+    embed = payload["embeds"][0]
+    print("========== Discord 訊息預覽 ==========")
+    print(payload["content"])
+    print(f"[{embed['title']}]")
+    print(embed["description"])
+    print("=======================================")
+
+
+def run(mode="live"):
+    """
+    mode:
+      "live"    -> 正式發送到 Discord(真實資料)
+      "test"    -> 假資料 + 只在終端機印出預覽,不發送
+      "preview" -> 真實資料 + 只在終端機印出預覽,不發送
+    """
+    if mode == "live" and not DISCORD_WEBHOOK_URL:
         print("錯誤:找不到環境變數 DISCORD_WEBHOOK_URL,請先設定。", file=sys.stderr)
         sys.exit(1)
 
-    use_test_data = test_mode or os.environ.get("USE_TEST_DATA", "false").lower() == "true"
+    use_test_data = mode == "test" or os.environ.get("USE_TEST_DATA", "false").lower() == "true"
     events = build_sample_events() if use_test_data else fetch_calendar()
 
-    today_local_date = datetime.now(LOCAL_TZ).date()
+    now_local = datetime.now(LOCAL_TZ)
+    window_end = now_local + timedelta(hours=WINDOW_HOURS)
 
-    events_today = []
+    matched = []
     for event in events:
         if event.get("country") != TARGET_COUNTRY:
             continue
         if event.get("impact") != TARGET_IMPACT:
             continue
         try:
-            event_date_local = date_parser.parse(event["date"]).astimezone(LOCAL_TZ).date()
+            event_time_local = date_parser.parse(event["date"]).astimezone(LOCAL_TZ)
         except (ValueError, TypeError):
             continue
-        if event_date_local == today_local_date:
-            events_today.append(event)
+        # 未來 N 小時內都算,不卡日曆日期,避免美東時間換算後
+        # 落在 GMT+8 凌晨、日期已經跳到明天的新聞被漏掉
+        if now_local <= event_time_local <= window_end:
+            matched.append(event)
 
-    events_today.sort(key=lambda e: date_parser.parse(e["date"]))
+    matched.sort(key=lambda e: date_parser.parse(e["date"]))
 
-    if test_mode:
-        print(f"[TEST] 今天符合條件的事件共 {len(events_today)} 則:")
-        for e in events_today:
-            print(f"  - {e['title']}")
+    if mode in ("test", "preview"):
+        print_preview(matched, now_local)
     else:
-        send_digest(events_today)
-        print(f"已發送每日摘要,共 {len(events_today)} 則事件。")
+        send_digest(matched, now_local)
+        print(f"已發送摘要,共 {len(matched)} 則事件。")
 
 
 if __name__ == "__main__":
-    run(test_mode="--test" in sys.argv)
+    if "--test" in sys.argv:
+        run(mode="test")
+    elif "--preview" in sys.argv:
+        run(mode="preview")
+    else:
+        run(mode="live")
