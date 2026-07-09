@@ -61,6 +61,15 @@ def build_sample_events():
     ]
 
 
+def build_sample_speech_event():
+    """測試用假資料:一則落在 30 分鐘後的 USD High 演講類新聞,用來驗證 Speech 警語"""
+    fake_time = (datetime.now(timezone.utc) + timedelta(minutes=LEAD_MINUTES)).isoformat()
+    return [
+        {"title": "Fed Chair Powell Speaks", "country": "USD", "impact": "High",
+         "date": fake_time, "forecast": "N/A", "previous": "N/A"},
+    ]
+
+
 def load_sent_state():
     if not STATE_FILE.exists():
         return {}
@@ -81,13 +90,33 @@ def event_key(event):
     return f"{event['country']}|{event['title']}|{event['date']}"
 
 
+# 用來判斷是否為「演講類」新聞的關鍵字(ForexFactory 標題常見用字)
+SPEECH_KEYWORDS = ["speech", "speaks", "testimony", "press conference", "q&a"]
+
+SPEECH_WARNING = (
+    "⚠️ 演講類新聞通常沒有固定結束時間。\n"
+    "在做任何交易決策前,先查看官方直播,確認演講是否已經結束。"
+)
+
+
+def is_speech(title):
+    t = title.lower()
+    return any(keyword in t for keyword in SPEECH_KEYWORDS)
+
+
 def build_message(triggered_events):
     lines = []
+    has_speech = False
     for event, minutes_until in triggered_events:
         t = date_parser.parse(event["date"]).astimezone(LOCAL_TZ).strftime("%H:%M")
         forecast = event.get("forecast") or "N/A"
         previous = event.get("previous") or "N/A"
         lines.append(f"{t} - {event['title']}\nForecast: {forecast} | Previous: {previous}")
+        if is_speech(event["title"]):
+            has_speech = True
+
+    if has_speech:
+        lines.append(SPEECH_WARNING)
 
     embed = {
         "title": "🟠 30 分鐘後有 USD 高影響新聞",
@@ -121,15 +150,29 @@ def print_preview(triggered_events):
 def run(mode="live"):
     """
     mode:
-      "live"    -> 正式發送到 Discord(真實資料)
-      "test"    -> 假資料 + 只在終端機印出預覽,不發送,不記錄 dedupe
-      "preview" -> 真實資料 + 只在終端機印出預覽,不發送,不記錄 dedupe
+      "live"          -> 正式發送到 Discord(真實資料)
+      "test"          -> 假資料(一般新聞)+ 終端機預覽,不發送,不記錄 dedupe
+      "test_speech"   -> 假資料(演講類新聞)+ 終端機預覽,不發送,不記錄 dedupe
+      "send_test"          -> 假資料(一般新聞)+ 真的發送到 Discord
+      "send_test_speech"   -> 假資料(演講類新聞)+ 真的發送到 Discord
+      "preview"       -> 真實資料 + 終端機預覽,不發送,不記錄 dedupe
     """
-    use_test_data = mode == "test" or os.environ.get("USE_TEST_DATA", "false").lower() == "true"
-
-    if mode == "live" and not DISCORD_WEBHOOK_URL:
+    needs_webhook = mode in ("live", "send_test", "send_test_speech")
+    if needs_webhook and not DISCORD_WEBHOOK_URL:
         print("錯誤:找不到環境變數 DISCORD_WEBHOOK_URL,請先設定。", file=sys.stderr)
         sys.exit(1)
+
+    if mode in ("test_speech", "send_test_speech"):
+        fake_events = build_sample_speech_event()
+        triggered = [(e, LEAD_MINUTES) for e in fake_events]
+        if mode == "send_test_speech":
+            send_reminder(triggered)
+            print("已發送 Speech 情境測試訊息。")
+        else:
+            print_preview(triggered)
+        return
+
+    use_test_data = mode in ("test", "send_test") or os.environ.get("USE_TEST_DATA", "false").lower() == "true"
 
     events = build_sample_events() if use_test_data else fetch_calendar()
 
@@ -166,6 +209,11 @@ def run(mode="live"):
             print("目前沒有落在 30 分鐘提醒視窗內的事件(用 --test 可以看假資料格式預覽)。")
         return
 
+    if mode == "send_test":
+        send_reminder(triggered)
+        print("已發送一般情境測試訊息。")
+        return
+
     if triggered:
         send_reminder(triggered)
         print(f"已發送提醒,共 {len(triggered)} 則事件。")
@@ -175,7 +223,13 @@ def run(mode="live"):
 
 
 if __name__ == "__main__":
-    if "--test" in sys.argv:
+    if "--send-test-speech" in sys.argv:
+        run(mode="send_test_speech")
+    elif "--test-speech" in sys.argv:
+        run(mode="test_speech")
+    elif "--send-test" in sys.argv:
+        run(mode="send_test")
+    elif "--test" in sys.argv:
         run(mode="test")
     elif "--preview" in sys.argv:
         run(mode="preview")
