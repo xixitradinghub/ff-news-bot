@@ -80,7 +80,7 @@ def build_message(events, now_local, window_end):
             f"{coverage_line}\n\n"
             f"{date_str}｜{weekday_cn(now_local)}\n計劃你的交易,交易你的計劃。✌️"
         )
-        title = "🟢 今日無 USD 高影響新聞"
+        title = "🟢 接下來12小時無 USD 高影響新聞"
         color = 0x00CED1  # 青色
     else:
         lines = [coverage_line, ""]
