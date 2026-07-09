@@ -76,27 +76,26 @@ def build_message(events, now_local, window_end):
 
     if not events:
         date_str = now_local.strftime("%Y-%m-%d")
-        description = (
-            f"{coverage_line}\n\n"
-            f"{date_str}｜{weekday_cn(now_local)}\n計劃你的交易,交易你的計劃。✌️"
-        )
+        description = f"{date_str}｜{weekday_cn(now_local)}\n計劃你的交易,交易你的計劃。✌️"
         title = "🟢 接下來12小時無 USD 高影響新聞"
         color = 0x2ECC71  # 綠色
     else:
-        lines = [coverage_line, ""]
+        # 按日期分組,組內事件用「日期標題\n事件1\n\n事件2」;組跟組之間用一行空白隔開
+        groups = []  # [(date, [event_text, ...]), ...]
         current_date = None
         for e in events:
             et = date_parser.parse(e["date"]).astimezone(LOCAL_TZ)
-            if et.date() != current_date:
-                current_date = et.date()
-                if len(lines) > 2:
-                    lines.append("")  # 換日期前多空一行
-                lines.append(f"{et.strftime('%Y-%m-%d')}｜{weekday_cn(et)}")
             forecast = e.get("forecast") or "N/A"
             previous = e.get("previous") or "N/A"
-            lines.append(f"{et.strftime('%H:%M')} — {e['title']}\nForecast: {forecast} | Previous: {previous}")
-            lines.append("")  # 每則事件之間多空一行,方便閱讀
-        description = "\n".join(lines).rstrip()
+            event_text = f"{et.strftime('%H:%M')} — {e['title']}\nForecast: {forecast} | Previous: {previous}"
+            if et.date() != current_date:
+                current_date = et.date()
+                groups.append((f"{et.strftime('%Y-%m-%d')}｜{weekday_cn(et)}", [event_text]))
+            else:
+                groups[-1][1].append(event_text)
+
+        group_blocks = [f"{header}\n" + "\n\n".join(event_texts) for header, event_texts in groups]
+        description = coverage_line + "\n\n" + "\n\n".join(group_blocks)
         title = "🔴 USD 高影響新聞"
         color = 0xFF0000  # 紅色
 
