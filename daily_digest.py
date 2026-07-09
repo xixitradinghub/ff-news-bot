@@ -81,7 +81,7 @@ def build_message(events, now_local, window_end):
             f"{date_str}｜{weekday_cn(now_local)}\n計劃你的交易,交易你的計劃。✌️"
         )
         title = "🟢 接下來12小時無 USD 高影響新聞"
-        color = 0x00CED1  # 青色
+        color = 0x2ECC71  # 綠色
     else:
         lines = [coverage_line, ""]
         current_date = None
