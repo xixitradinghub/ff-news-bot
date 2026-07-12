@@ -177,6 +177,10 @@ def run(mode="live"):
     now_local = datetime.now(LOCAL_TZ)
     window_end = now_local + timedelta(hours=WINDOW_HOURS)
 
+    if now_local.weekday() >= 5:  # 5=星期六, 6=星期日
+        print(f"今天是{weekday_cn(now_local)}(週末),跳過發送,不打擾大家。")
+        return
+
     events = fetch_calendar()
 
     matched = []
