@@ -172,6 +172,13 @@ def run(mode="live"):
             print_preview(triggered)
         return
 
+    if mode == "live":
+        now_local_check = datetime.now(LOCAL_TZ)
+        if now_local_check.weekday() >= 5:  # 5=星期六, 6=星期日
+            weekday_name = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"][now_local_check.weekday()]
+            print(f"今天是{weekday_name}(週末),跳過檢查,不打擾大家。")
+            return
+
     use_test_data = mode in ("test", "send_test") or os.environ.get("USE_TEST_DATA", "false").lower() == "true"
 
     events = build_sample_events() if use_test_data else fetch_calendar()
