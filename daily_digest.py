@@ -81,7 +81,7 @@ def build_event_sections(events):
             current_date = date_key
             current_time = None
             date_groups.append({
-                "header": f"{et.strftime('%Y-%m-%d')}｜{weekday_cn(et)}",
+                "header": f"**{et.strftime('%Y-%m-%d')}｜{weekday_cn(et)}**",
                 "time_blocks": [],
             })
 
@@ -90,7 +90,8 @@ def build_event_sections(events):
             date_groups[-1]["time_blocks"].append([f"{time_str} - {e['title']}"])
         else:
             padding = " " * 6  # 對齊「HH:MM 」的寬度,讓橫線對齊
-            date_groups[-1]["time_blocks"][-1].append(f"{padding}- {e['title']}")
+            # 用 \- 跳脫橫線,避免 Discord 把「空格+-」誤判成條列清單符號
+            date_groups[-1]["time_blocks"][-1].append(f"{padding}\\- {e['title']}")
 
     group_strs = []
     for g in date_groups:
@@ -104,7 +105,7 @@ def build_message(events, now_local):
     """組出 Discord 訊息的 embed,回傳 payload(共用給正式發送跟預覽用)。每日摘要不 @everyone。"""
     if not events:
         date_str = now_local.strftime("%Y-%m-%d")
-        description = f"{date_str}｜{weekday_cn(now_local)}\n計劃你的交易,交易你的計劃。✌️"
+        description = f"**{date_str}｜{weekday_cn(now_local)}**\n計劃你的交易,交易你的計劃。✌️"
         title = "⚪ 接下來24小時無 USD 高影響新聞"
         color = 0xFFFFFF  # 白色
     else:
