@@ -89,7 +89,7 @@ def build_event_sections(events):
             current_time = time_str
             date_groups[-1]["time_blocks"].append([f"{time_str} - {e['title']}"])
         else:
-            padding = "\u00A0" * 6  # 不換行空格,對齊「HH:MM 」的寬度(一般空格會被 Discord 壓縮,不能用)
+            padding = "\u00A0" * 8  # 不換行空格,對齊「HH:MM 」的寬度(數字比空格寬,所以字數要多一點才能對齊)
             # 用 \- 跳脫橫線,避免 Discord 把「空格+-」誤判成條列清單符號
             date_groups[-1]["time_blocks"][-1].append(f"{padding}\\- {e['title']}")
 
