@@ -68,7 +68,7 @@ def build_message(events, now_local):
 
     if not events:
         date_str = now_local.strftime("%Y-%m-%d")
-        description = f"{date_str}｜{weekday_cn(now_local)}\n計劃你的交易,交易你的計劃。"
+        description = f"{date_str}｜{weekday_cn(now_local)}\n計劃你的交易,交易你的計劃。✌️"
         title = "⚪ 接下來24小時無 USD 高影響新聞"
         color = 0xFFFFFF  # 白色
     else:
