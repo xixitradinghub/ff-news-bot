@@ -38,6 +38,15 @@ def weekday_cn(dt):
     return WEEKDAY_CN[dt.weekday()]
 
 
+def format_12hr(dt):
+    """格式化成 12 小時制,例如 8:30 PM(不補零、AM/PM 大寫)"""
+    hour12 = dt.hour % 12
+    if hour12 == 0:
+        hour12 = 12
+    ampm = "AM" if dt.hour < 12 else "PM"
+    return f"{hour12}:{dt.minute:02d} {ampm}"
+
+
 # ---------- 核心邏輯 ----------
 
 def fetch_calendar():
@@ -65,40 +74,31 @@ def build_sample_events(base_now):
 
 def build_event_sections(events):
     """
-    把事件依「日期」再依「時間」分組,同時間的多則新聞只顯示一次時間,
-    後面的用對齊的橫線列出。回傳組好的 description 字串(不含標題)。
+    把事件依「時間」分組(不顯示日期,即使跨到隔天凌晨也一樣)。
+    同時間的多則新聞,用 Discord 原生的項目符號列出。
     """
-    date_groups = []  # [{'header': str, 'time_blocks': [[line, line, ...], ...]}, ...]
-    current_date = None
-    current_time = None
+    time_groups = []  # [{'key': (date, time_str), 'header': str, 'titles': [...]}, ...]
+    current_key = None
 
     for e in events:
         et = date_parser.parse(e["date"]).astimezone(LOCAL_TZ)
-        date_key = et.date()
-        time_str = et.strftime("%H:%M")
+        key = (et.date(), et.strftime("%H:%M"))
 
-        if date_key != current_date:
-            current_date = date_key
-            current_time = None
-            date_groups.append({
-                "header": f"**{et.strftime('%Y-%m-%d')}｜{weekday_cn(et)}**",
-                "time_blocks": [],
+        if key != current_key:
+            current_key = key
+            time_groups.append({
+                "header": f"⏰ {format_12hr(et)} (GMT+8)",
+                "titles": [],
             })
 
-        if time_str != current_time:
-            current_time = time_str
-            date_groups[-1]["time_blocks"].append([f"**{time_str}** - {e['title']}"])
-        else:
-            padding = "\u00A0" * 12  # 不換行空格,對齊「HH:MM 」的寬度(反覆微調中)
-            # 用 \- 跳脫橫線,避免 Discord 把「空格+-」誤判成條列清單符號
-            date_groups[-1]["time_blocks"][-1].append(f"{padding}\\- {e['title']}")
+        time_groups[-1]["titles"].append(e["title"])
 
-    group_strs = []
-    for g in date_groups:
-        time_block_strs = ["\n".join(tb) for tb in g["time_blocks"]]
-        group_strs.append(g["header"] + "\n" + "\n\n".join(time_block_strs))
+    blocks = []
+    for g in time_groups:
+        lines = [g["header"]] + [f"- {t}" for t in g["titles"]]
+        blocks.append("\n".join(lines))
 
-    return "\n\n".join(group_strs)
+    return "\n\n".join(blocks)
 
 
 def build_message(events, now_local):
