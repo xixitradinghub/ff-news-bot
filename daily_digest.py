@@ -51,41 +51,65 @@ def fetch_calendar():
 
 
 def build_sample_events(base_now):
-    """測試用假資料:模擬同一天兩則 + 跨天一則,示範分組格式"""
+    """測試用假資料:模擬同一天兩個時段(其中一個時段有2則新聞)+ 跨天一則,示範分組格式"""
     today_2030 = base_now.replace(hour=20, minute=30, second=0, microsecond=0)
     today_2200 = base_now.replace(hour=22, minute=0, second=0, microsecond=0)
     tomorrow_0200 = (base_now + timedelta(days=1)).replace(hour=2, minute=0, second=0, microsecond=0)
     return [
         {"title": "Core CPI m/m", "country": "USD", "impact": "High", "date": today_2030.isoformat()},
+        {"title": "Core CPI y/y", "country": "USD", "impact": "High", "date": today_2030.isoformat()},
         {"title": "Fed Chairman Warsh Testifies", "country": "USD", "impact": "High", "date": today_2200.isoformat()},
         {"title": "NFP", "country": "USD", "impact": "High", "date": tomorrow_0200.isoformat()},
     ]
 
 
+def build_event_sections(events):
+    """
+    把事件依「日期」再依「時間」分組,同時間的多則新聞只顯示一次時間,
+    後面的用對齊的橫線列出。回傳組好的 description 字串(不含標題)。
+    """
+    date_groups = []  # [{'header': str, 'time_blocks': [[line, line, ...], ...]}, ...]
+    current_date = None
+    current_time = None
+
+    for e in events:
+        et = date_parser.parse(e["date"]).astimezone(LOCAL_TZ)
+        date_key = et.date()
+        time_str = et.strftime("%H:%M")
+
+        if date_key != current_date:
+            current_date = date_key
+            current_time = None
+            date_groups.append({
+                "header": f"{et.strftime('%Y-%m-%d')}｜{weekday_cn(et)}",
+                "time_blocks": [],
+            })
+
+        if time_str != current_time:
+            current_time = time_str
+            date_groups[-1]["time_blocks"].append([f"{time_str} - {e['title']}"])
+        else:
+            padding = " " * 6  # 對齊「HH:MM 」的寬度,讓橫線對齊
+            date_groups[-1]["time_blocks"][-1].append(f"{padding}- {e['title']}")
+
+    group_strs = []
+    for g in date_groups:
+        time_block_strs = ["\n".join(tb) for tb in g["time_blocks"]]
+        group_strs.append(g["header"] + "\n" + "\n\n".join(time_block_strs))
+
+    return "\n\n".join(group_strs)
+
+
 def build_message(events, now_local):
     """組出 Discord 訊息的 embed,回傳 payload(共用給正式發送跟預覽用)。每日摘要不 @everyone。"""
-    coverage_line = "即將到來的 24 小時新聞速報"
-
     if not events:
         date_str = now_local.strftime("%Y-%m-%d")
         description = f"{date_str}｜{weekday_cn(now_local)}\n計劃你的交易,交易你的計劃。✌️"
         title = "⚪ 接下來24小時無 USD 高影響新聞"
         color = 0xFFFFFF  # 白色
     else:
-        groups = []  # [(date_header, [event_text, ...]), ...]
-        current_date = None
-        for e in events:
-            et = date_parser.parse(e["date"]).astimezone(LOCAL_TZ)
-            event_text = f"{et.strftime('%H:%M')}\n{e['title']}"
-            if et.date() != current_date:
-                current_date = et.date()
-                groups.append((f"{et.strftime('%Y-%m-%d')}｜{weekday_cn(et)}", [event_text]))
-            else:
-                groups[-1][1].append(event_text)
-
-        group_blocks = [f"{header}\n" + "\n\n".join(event_texts) for header, event_texts in groups]
-        description = coverage_line + "\n" + "\n\n".join(group_blocks)
-        title = "🔴 USD 高影響新聞"
+        description = build_event_sections(events)
+        title = "🔴 接下來24小時USD 高影響新聞"
         color = 0xFF0000  # 紅色
 
     embed = {"title": title, "description": description, "color": color}
