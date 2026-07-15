@@ -9,8 +9,7 @@ on:
         type: choice
         options:
           - "off(正式發送真實資料)"
-          - "早上情境(假資料)"
-          - "晚上情境(假資料)"
+          - "有新聞情境(假資料)"
           - "無新聞情境(假資料)"
         default: "off(正式發送真實資料)"
 
@@ -35,17 +34,11 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python daily_digest.py
 
-      - name: Run daily digest (test - morning)
-        if: ${{ inputs.test_scenario == '早上情境(假資料)' }}
+      - name: Run daily digest (test - with news)
+        if: ${{ inputs.test_scenario == '有新聞情境(假資料)' }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python daily_digest.py --send-test-morning
-
-      - name: Run daily digest (test - evening)
-        if: ${{ inputs.test_scenario == '晚上情境(假資料)' }}
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python daily_digest.py --send-test-evening
+        run: python daily_digest.py --send-test
 
       - name: Run daily digest (test - empty)
         if: ${{ inputs.test_scenario == '無新聞情境(假資料)' }}
