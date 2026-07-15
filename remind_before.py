@@ -123,16 +123,17 @@ def build_message(triggered_events):
             current_date = date_key
             current_time = None
             date_groups.append({
-                "header": f"{et.strftime('%Y-%m-%d')}｜{weekday_cn(et)}",
+                "header": f"**{et.strftime('%Y-%m-%d')}｜{weekday_cn(et)}**",
                 "time_blocks": [],
             })
 
         if time_str != current_time:
             current_time = time_str
-            date_groups[-1]["time_blocks"].append([f"{time_str} - {event['title']}"])
+            date_groups[-1]["time_blocks"].append([f"**{time_str}** - {event['title']}"])
         else:
             padding = " " * 6  # 對齊「HH:MM 」的寬度,讓橫線對齊
-            date_groups[-1]["time_blocks"][-1].append(f"{padding}- {event['title']}")
+            # 用 \- 跳脫橫線,避免 Discord 把「空格+-」誤判成條列清單符號
+            date_groups[-1]["time_blocks"][-1].append(f"{padding}\\- {event['title']}")
 
         if is_speech(event["title"]):
             has_speech = True
