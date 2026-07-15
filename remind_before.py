@@ -109,23 +109,39 @@ def event_key(event):
 
 def build_message(triggered_events):
     """組出 Discord 訊息的 content + embed。觸發事件依日期分組,格式:日期\\n時間\\n標題"""
-    groups = []  # [(date_header, [event_text, ...]), ...]
+    date_groups = []  # [{'header': str, 'time_blocks': [[line, ...], ...]}, ...]
     current_date = None
+    current_time = None
     has_speech = False
 
     for event, _minutes_until in triggered_events:
         et = date_parser.parse(event["date"]).astimezone(LOCAL_TZ)
-        event_text = f"{et.strftime('%H:%M')}\n{event['title']}"
-        if et.date() != current_date:
-            current_date = et.date()
-            groups.append((f"{et.strftime('%Y-%m-%d')}｜{weekday_cn(et)}", [event_text]))
+        date_key = et.date()
+        time_str = et.strftime("%H:%M")
+
+        if date_key != current_date:
+            current_date = date_key
+            current_time = None
+            date_groups.append({
+                "header": f"{et.strftime('%Y-%m-%d')}｜{weekday_cn(et)}",
+                "time_blocks": [],
+            })
+
+        if time_str != current_time:
+            current_time = time_str
+            date_groups[-1]["time_blocks"].append([f"{time_str} - {event['title']}"])
         else:
-            groups[-1][1].append(event_text)
+            padding = " " * 6  # 對齊「HH:MM 」的寬度,讓橫線對齊
+            date_groups[-1]["time_blocks"][-1].append(f"{padding}- {event['title']}")
+
         if is_speech(event["title"]):
             has_speech = True
 
-    group_blocks = [f"{header}\n" + "\n\n".join(event_texts) for header, event_texts in groups]
-    description = "\n\n".join(group_blocks)
+    group_strs = []
+    for g in date_groups:
+        time_block_strs = ["\n".join(tb) for tb in g["time_blocks"]]
+        group_strs.append(g["header"] + "\n" + "\n\n".join(time_block_strs))
+    description = "\n\n".join(group_strs)
 
     if has_speech:
         description += "\n\n" + SPEECH_WARNING
