@@ -1,10 +1,12 @@
 """
 Forex Factory (Fair Economy feed) -> Discord Webhook 24小時摘要
-每天早上8點執行一次,列出「接下來 24 小時內」的 USD + High Impact(紅色)新聞
+每天早上8點執行一次,列出「接下來 24 小時內」的主要貨幣 + High Impact(紅色)新聞
+
+涵蓋貨幣:USD, EUR, GBP, JPY, AUD, NZD, CAD, CHF
 
 用法:
     python daily_digest.py             -> 抓真實資料並發送到 Discord(正式使用)
-    python daily_digest.py --test      -> 假資料(有新聞),終端機預覽,不發送
+    python daily_digest.py --test      -> 假資料(有新聞,含多貨幣),終端機預覽,不發送
     python daily_digest.py --test-empty -> 假資料(無新聞),終端機預覽,不發送
     python daily_digest.py --send-test      -> 假資料(有新聞),真的發送到 Discord
     python daily_digest.py --send-test-empty -> 假資料(無新聞),真的發送到 Discord
@@ -22,7 +24,8 @@ from dateutil import parser as date_parser
 
 FF_JSON_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 
-TARGET_COUNTRY = "USD"
+# 主要貨幣清單
+TARGET_COUNTRIES = {"USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"}
 TARGET_IMPACT = "High"
 
 WINDOW_HOURS = 24  # 每次看「接下來幾小時」內的新聞
@@ -60,27 +63,37 @@ def fetch_calendar():
 
 
 def build_sample_events(base_now):
-    """測試用假資料:模擬同一天兩個時段(其中一個時段有2則新聞)+ 跨天一則,示範分組格式"""
+    """測試用假資料:示範同時間多則、跨天、以及多種貨幣混合的情境"""
     today_2030 = base_now.replace(hour=20, minute=30, second=0, microsecond=0)
-    today_2200 = base_now.replace(hour=22, minute=0, second=0, microsecond=0)
+    today_2145 = base_now.replace(hour=21, minute=45, second=0, microsecond=0)
     tomorrow_0200 = (base_now + timedelta(days=1)).replace(hour=2, minute=0, second=0, microsecond=0)
     return [
         {"title": "Core CPI m/m", "country": "USD", "impact": "High", "date": today_2030.isoformat()},
         {"title": "Core CPI y/y", "country": "USD", "impact": "High", "date": today_2030.isoformat()},
-        {"title": "Fed Chairman Warsh Testifies", "country": "USD", "impact": "High", "date": today_2200.isoformat()},
-        {"title": "NFP", "country": "USD", "impact": "High", "date": tomorrow_0200.isoformat()},
+        {"title": "ECB Interest Rate Decision", "country": "EUR", "impact": "High", "date": today_2145.isoformat()},
+        {"title": "GDP m/m", "country": "GBP", "impact": "High", "date": tomorrow_0200.isoformat()},
     ]
 
 
 def build_event_sections(events):
     """
     把事件依「時間」分組(不顯示日期,即使跨到隔天凌晨也一樣)。
-    同時間的多則新聞,用 Discord 原生的項目符號列出。
+    同時間的多則新聞,用 Discord 原生的項目符號列出,每則標示幣種。
     """
-    time_groups = []  # [{'key': (date, time_str), 'header': str, 'titles': [...]}, ...]
+    # 先依 (日期時間, 貨幣代碼) 排序,確保同時間內的順序穩定
+    sorted_events = sorted(
+        events,
+        key=lambda e: (
+            date_parser.parse(e["date"]),
+            0 if e.get("country") == "USD" else 1,
+            e.get("country", ""),
+        ),
+    )
+
+    time_groups = []  # [{'key': (date, time_str), 'header': str, 'lines': [...]}, ...]
     current_key = None
 
-    for e in events:
+    for e in sorted_events:
         et = date_parser.parse(e["date"]).astimezone(LOCAL_TZ)
         key = (et.date(), et.strftime("%H:%M"))
 
@@ -88,15 +101,14 @@ def build_event_sections(events):
             current_key = key
             time_groups.append({
                 "header": f"⏰ {format_12hr(et)} (GMT+8)",
-                "titles": [],
+                "lines": [],
             })
 
-        time_groups[-1]["titles"].append(e["title"])
+        time_groups[-1]["lines"].append(f"- [{e.get('country', '')}] {e['title']}")
 
     blocks = []
     for g in time_groups:
-        lines = [g["header"]] + [f"- {t}" for t in g["titles"]]
-        blocks.append("\n".join(lines))
+        blocks.append("\n".join([g["header"]] + g["lines"]))
 
     return "\n\n".join(blocks)
 
@@ -105,11 +117,11 @@ def build_message(events, now_local):
     """組出 Discord 訊息的 embed,回傳 payload(共用給正式發送跟預覽用)。每日摘要不 @everyone。"""
     if not events:
         description = "計劃你的交易,交易你的計劃。✌️"
-        title = "⚪ 接下來24小時無 USD 高影響新聞"
+        title = "⚪ 接下來24小時無主要貨幣高影響新聞"
         color = 0xFFFFFF  # 白色
     else:
         description = build_event_sections(events)
-        title = "🔴 接下來24小時USD 高影響新聞"
+        title = "🔴 接下來24小時主要貨幣高影響新聞"
         color = 0xFF0000  # 紅色
 
     embed = {"title": title, "description": description, "color": color}
@@ -178,7 +190,7 @@ def run(mode="live"):
 
     matched = []
     for event in events:
-        if event.get("country") != TARGET_COUNTRY:
+        if event.get("country") not in TARGET_COUNTRIES:
             continue
         if event.get("impact") != TARGET_IMPACT:
             continue
