@@ -1,6 +1,8 @@
 """
 Forex Factory (Fair Economy feed) -> Discord Webhook 30 分鐘前提醒
-每 5 分鐘執行一次,檢查是否有 USD + High Impact 新聞即將在 30 分鐘後公佈
+每 5 分鐘執行一次,檢查是否有主要貨幣 + High Impact 新聞即將在 30 分鐘後公佈
+
+涵蓋貨幣:USD, EUR, GBP, JPY, AUD, NZD, CAD, CHF
 
 用法:
     python remind_before.py               -> 抓真實資料,符合條件會真的發送到 Discord
@@ -25,7 +27,8 @@ from dateutil import parser as date_parser
 
 FF_JSON_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 
-TARGET_COUNTRY = "USD"
+# 主要貨幣清單
+TARGET_COUNTRIES = {"USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"}
 TARGET_IMPACT = "High"
 
 # 提前多少分鐘提醒
@@ -83,16 +86,17 @@ def fetch_calendar():
 
 
 def build_sample_events():
-    """測試用假資料:一則會落在 30 分鐘後的 USD High 新聞"""
+    """測試用假資料:一則會落在 30 分鐘後的 USD High 新聞 + 一則 EUR(示範多貨幣)"""
     fake_time = (datetime.now(timezone.utc) + timedelta(minutes=LEAD_MINUTES)).isoformat()
     return [
         {"title": "Core CPI m/m", "country": "USD", "impact": "High", "date": fake_time},
+        {"title": "ECB Interest Rate Decision", "country": "EUR", "impact": "High", "date": fake_time},
         {"title": "Low Impact News", "country": "USD", "impact": "Low", "date": fake_time},
     ]
 
 
 def build_sample_speech_event():
-    """測試用假資料:一則落在 30 分鐘後的 USD High 演講類新聞"""
+    """測試用假資料:一則落在 30 分鐘後的演講類新聞"""
     fake_time = (datetime.now(timezone.utc) + timedelta(minutes=LEAD_MINUTES)).isoformat()
     return [{"title": "Fed Chairman Warsh Testifies", "country": "USD", "impact": "High", "date": fake_time}]
 
@@ -117,12 +121,21 @@ def event_key(event):
 
 
 def build_message(triggered_events):
-    """組出 Discord 訊息的 content + embed。依時間分組(不顯示日期),同時間多則新聞用 bullet 列出。"""
-    time_groups = []  # [{'key': (date, time_str), 'header': str, 'titles': [...]}, ...]
+    """組出 Discord 訊息的 content + embed。依時間分組(不顯示日期),同時間多則新聞用 bullet 列出,標示幣種。"""
+    sorted_events = sorted(
+        triggered_events,
+        key=lambda pair: (
+            date_parser.parse(pair[0]["date"]),
+            0 if pair[0].get("country") == "USD" else 1,
+            pair[0].get("country", ""),
+        ),
+    )
+
+    time_groups = []  # [{'key': (date, time_str), 'header': str, 'lines': [...]}, ...]
     current_key = None
     has_speech = False
 
-    for event, _minutes_until in triggered_events:
+    for event, _minutes_until in sorted_events:
         et = date_parser.parse(event["date"]).astimezone(LOCAL_TZ)
         key = (et.date(), et.strftime("%H:%M"))
 
@@ -130,25 +143,24 @@ def build_message(triggered_events):
             current_key = key
             time_groups.append({
                 "header": f"⏰ {format_12hr(et)} (GMT+8)",
-                "titles": [],
+                "lines": [],
             })
 
-        time_groups[-1]["titles"].append(event["title"])
+        time_groups[-1]["lines"].append(f"- [{event.get('country', '')}] {event['title']}")
 
         if is_speech(event["title"]):
             has_speech = True
 
     blocks = []
     for g in time_groups:
-        lines = [g["header"]] + [f"- {t}" for t in g["titles"]]
-        blocks.append("\n".join(lines))
+        blocks.append("\n".join([g["header"]] + g["lines"]))
     description = "\n\n".join(blocks)
 
     if has_speech:
         description += "\n\n" + SPEECH_WARNING
 
     embed = {
-        "title": "🚨 30 分鐘後有 USD 高影響新聞",
+        "title": "🚨 30 分鐘後有高影響新聞",
         "description": description,
         "color": 0xFF0000,  # 紅色
     }
@@ -217,7 +229,7 @@ def run(mode="live"):
     triggered = []
 
     for event in events:
-        if event.get("country") != TARGET_COUNTRY:
+        if event.get("country") not in TARGET_COUNTRIES:
             continue
         if event.get("impact") != TARGET_IMPACT:
             continue
